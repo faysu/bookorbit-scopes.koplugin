@@ -9,6 +9,15 @@ local Logic = require("bscopes_logic")
 
 local Source = {}
 
+-- Etiqueta que Bookshelf pone a una estantería recién creada ("New shelf",
+-- traducida; "New chip" en versiones antiguas) y el nombre de la fuente.
+local AUTO_LABELS = {
+    ["New shelf"] = true,
+    ["Nueva estantería"] = true,
+    ["New chip"] = true,
+    ["SmartScope de BookOrbit"] = true,
+}
+
 -- deps:
 --   store            bscopes_store
 --   available()      -> bool   (plugin oficial instalado y con sesión)
@@ -17,6 +26,7 @@ local Source = {}
 --   exists(p)        -> bool
 --   cover(p)         -> bb, w, h   (portada de la caché de Cover browser)
 --   chooseScope(scopes, on_choice)  menú para elegir; on_choice(scope|nil)
+--   askName(proposed, cb)  pide el nombre de la estantería; cb(texto|nil)
 --   ensureScopes(cb) consigue la lista de scopes (red si hace falta); cb(ok)
 --   requestSync(opts) lanza una sincronización en segundo plano
 --   maybeAutoSync()  sincroniza si la caché es vieja y hay red
@@ -40,15 +50,34 @@ function Source.spec(deps)
             deps.localProgress, deps.exists)
     end
 
+    -- Nombres que no ha puesto el usuario: los de Bookshelf para una
+    -- estantería nueva y los títulos de scopes (puestos por este plugin).
+    local function isAutoLabel(label)
+        if label == nil or label == "" or AUTO_LABELS[label] then return true end
+        for _, s in ipairs(store:scopes()) do
+            if s.title == label then return true end
+        end
+        return false
+    end
+
     local function startPick(draft, done)
         deps.chooseScope(store:scopes(), function(scope)
             if not scope then return done(false) end
             draft.source.scope_id = scope.id
             draft.source.scope_title = scope.title
-            draft.label = scope.title
             store:markUsed(scope.id)
             if deps.requestSync then deps.requestSync({ reason = "picked" }) end
-            done()
+            local proposed = isAutoLabel(draft.label) and scope.title or draft.label
+            if not deps.askName then
+                draft.label = proposed
+                return done()
+            end
+            -- El nombre se puede acortar aquí; cancelar deja el propuesto.
+            deps.askName(proposed, function(name)
+                if type(name) == "string" then name = name:match("^%s*(.-)%s*$") end
+                draft.label = (name and name ~= "") and name or proposed
+                done()
+            end)
         end)
     end
 

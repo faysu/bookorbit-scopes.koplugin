@@ -141,7 +141,13 @@ T.test("elegir scope + sync: la estantería se llena y Bookshelf se entera", fun
     T.eq(#env.menu.item_table, 4)
     env.menu.item_table[2].callback()   -- Fantasía
     env.menu.close_callback()
+    T.ok(env.dialog, "pide el nombre")
+    T.eq(env.dialog.title, "Nombre de la estantería")
+    T.eq(env.dialog.input, "Fantasía")
+    env.dialog.text = "Fanta"
+    env.dialog.buttons[1][2].callback()   -- Guardar
     T.eq(accepted, true)
+    T.eq(draft.label, "Fanta")
     T.eq(draft.source.scope_id, "6")
     -- El pick lanza otra sync con la scope ya apuntada.
     local recs = spec.list(draft.source)

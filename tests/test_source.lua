@@ -135,3 +135,53 @@ T.test("cover: delega en la caché de portadas con la ruta", function()
     local bb, w, h = spec.cover({ filepath = "/mnt/us/x.epub" })
     T.eq(got, "/mnt/us/x.epub"); T.eq(bb, "bb"); T.eq(w, 10); T.eq(h, 20)
 end)
+
+T.test("pick: se puede poner un nombre más corto", function()
+    local d = deps(filledStore(), {
+        chooseScope = function(scopes, cb) cb(scopes[4]) end,   -- Leyendo o queriendo leer
+        askName = function(proposed, cb)
+            T.eq(proposed, "Leyendo o queriendo leer")
+            cb("  Leyendo  ")
+        end,
+    })
+    local draft = { label = "Nueva estantería", source = { kind = Logic.SOURCE_ID } }
+    Source.spec(d).pick(draft, function() end)
+    T.eq(draft.label, "Leyendo")
+    T.eq(draft.source.scope_title, "Leyendo o queriendo leer")
+end)
+
+T.test("pick: cancelar el nombre deja el de la scope", function()
+    local d = deps(filledStore(), {
+        chooseScope = function(scopes, cb) cb(scopes[2]) end,
+        askName = function(_, cb) cb(nil) end,
+    })
+    local draft = { label = "New shelf", source = {} }
+    local result = "pendiente"
+    Source.spec(d).pick(draft, function(v) result = v end)
+    T.eq(result, nil, "la scope sí queda elegida")
+    T.eq(draft.label, "Fantasía")
+end)
+
+T.test("pick: un nombre puesto por el usuario no se pisa", function()
+    local proposed
+    local d = deps(filledStore(), {
+        chooseScope = function(scopes, cb) cb(scopes[2]) end,
+        askName = function(p, cb) proposed = p; cb(nil) end,
+    })
+    local draft = { label = "Mis dragones", source = {} }
+    Source.spec(d).pick(draft, function() end)
+    T.eq(proposed, "Mis dragones")
+    T.eq(draft.label, "Mis dragones")
+end)
+
+T.test("pick: cambiar de scope renombra si el nombre era el de otra scope", function()
+    local proposed
+    local d = deps(filledStore(), {
+        chooseScope = function(scopes, cb) cb(scopes[3]) end,   -- Leídos
+        askName = function(p, cb) proposed = p; cb(nil) end,
+    })
+    local draft = { label = "Fantasía", source = { scope_id = "6" } }
+    Source.spec(d).pick(draft, function() end)
+    T.eq(proposed, "Leídos")
+    T.eq(draft.label, "Leídos")
+end)

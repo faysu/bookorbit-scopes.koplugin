@@ -15,7 +15,7 @@
 
 ## What it does
 
-- **Choosing a SmartScope:** when you create or edit a shelf in Bookshelf, pick **Origen / agrupación → SmartScope de BookOrbit**. A list of your SmartScopes appears. The shelf is named after the SmartScope; rename it with Bookshelf's **Editar etiqueta**.
+- **Choosing a SmartScope:** when you create or edit a shelf in Bookshelf, pick **Origen / agrupación → SmartScope de BookOrbit**. A list of your SmartScopes appears. Then you are asked for a shelf name, prefilled with the scope title so you can shorten it. A name you typed yourself is kept if you change the scope later.
 - **Which books appear:** books on the device that are matched to BookOrbit and belong to that SmartScope. It does **not** browse your whole BookOrbit library looking for new books; use BookOrbit Sync to download those.
 - **Progress:** the higher of the server's progress and the device's own (KOReader sidecar). A book counts as finished if either side says so.
 - **Opening a book:** nothing changes. Books open as normal files, and BookOrbit Sync still asks whether to jump to the server position or keep the local one.
@@ -57,7 +57,7 @@ If BookOrbit fixes the filter, the plugin notices by itself and switches to requ
 
 On a Kindle, KOReader has no USB storage mode: exit KOReader and plug the cable in from the Kindle's own screen.
 
-**Copying from a Mac?** macOS writes hidden `._*` files on FAT disks, and Bookshelf tries to load the ones inside its `micromodules` folder. Copy with `cp -X`.
+**Copying from a Mac?** macOS writes hidden `._*` files on FAT disks, and Bookshelf tries to load the ones inside its `micromodules` folder. Copy with `cp -X`, or use `tools/instalar_kindle.sh` from this repository.
 
 ### Coming from the BookOrbit dashboard as home screen
 
@@ -73,6 +73,7 @@ Also set Bookshelf as the start screen: in the file browser's first menu tab, **
 brew install luajit        # or your distro's luajit
 tests/run.sh               # all suites
 tests/run.sh test_logic    # one suite
+tools/empaquetar.sh        # builds dist/bookorbit-scopes.koplugin.zip
 ```
 
 The first time, `tests/run.sh` clones Bookshelf at a pinned commit into `tests/.cache`, so the source is checked against Bookshelf's real registry (`lib/bookshelf_sources.lua`).
@@ -85,7 +86,7 @@ luajit tools/probar_servidor.lua path/to/settings.reader.lua path/to/bookorbit_s
 
 | File | Purpose |
 |---|---|
-| `main.lua` | KOReader glue: Bookshelf registration, menu, Wi-Fi events, scope picker. |
+| `main.lua` | KOReader glue: Bookshelf registration, menu, Wi-Fi events, scope picker, name dialog. |
 | `bscopes_service.lua` | Shared state: cache, background sync, sidecars, covers. |
 | `bscopes_source.lua` | The Bookshelf source (Source API v1, `list` mode). |
 | `bscopes_sync.lua` | One sync pass, run inside BookOrbit Sync's subprocess. |

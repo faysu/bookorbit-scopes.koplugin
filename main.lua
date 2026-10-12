@@ -64,6 +64,38 @@ local function chooseScope(scopes, on_choice)
     UIManager:show(menu)
 end
 
+-- Nombre de la estantería, con el título de la scope ya escrito.
+local function askName(proposed, cb)
+    local InputDialog = require("ui/widget/inputdialog")
+    local dialog
+    dialog = InputDialog:new{
+        title = "Nombre de la estantería",
+        input = proposed or "",
+        allow_newline = false,
+        buttons = { {
+            {
+                text = "Cancelar",
+                id = "close",
+                callback = function()
+                    UIManager:close(dialog)
+                    cb(nil)
+                end,
+            },
+            {
+                text = "Guardar",
+                is_enter_default = true,
+                callback = function()
+                    local text = dialog:getInputText()
+                    UIManager:close(dialog)
+                    cb(text)
+                end,
+            },
+        } },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
 local function ensureScopes(cb)
     local NetworkMgr = require("ui/network/manager")
     NetworkMgr:runWhenOnline(function()
@@ -83,6 +115,7 @@ local function spec()
         exists = Service.exists,
         cover = Service.cover,
         chooseScope = chooseScope,
+        askName = askName,
         ensureScopes = ensureScopes,
         requestSync = function(opts)
             opts = opts or {}

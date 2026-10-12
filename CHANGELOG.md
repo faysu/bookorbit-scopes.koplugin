@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 — 2026-10-12
+
+- **Shelf name when picking a SmartScope.** After choosing the scope you are asked for the shelf name, prefilled with the scope title, so long titles can be shortened. Cancel keeps the scope title.
+- **Names you typed are kept.** Picking another scope no longer overwrites a custom shelf name; only automatic names (Bookshelf's "New shelf" or a previous scope title) are replaced.
+- **Clean copies from macOS.** New `tools/instalar_kindle.sh` (install over USB) and `tools/empaquetar.sh` (release zip) copy without the hidden `._*` files macOS writes on FAT disks; Bookshelf tried to load the ones in its `micromodules` folder.
+
 ## 0.1.0 — 2026-10-12
 
 First release.
