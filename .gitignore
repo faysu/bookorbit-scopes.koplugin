@@ -1,0 +1,4 @@
+tests/.cache/
+dist/
+.DS_Store
+._*
