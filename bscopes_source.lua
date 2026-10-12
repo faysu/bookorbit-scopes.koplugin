@@ -5,7 +5,10 @@
 -- scope_title = "..." }. list() responde siempre desde la caché local, sin
 -- red: es lo que se pinta offline.
 
+local I18n = require("bscopes_i18n")
 local Logic = require("bscopes_logic")
+
+local _ = I18n.gettext
 
 local Source = {}
 
@@ -15,8 +18,8 @@ local AUTO_LABELS = {
     ["New shelf"] = true,
     ["Nueva estantería"] = true,
     ["New chip"] = true,
-    ["SmartScope de BookOrbit"] = true,
 }
+for _i, form in ipairs(I18n.allForms("BookOrbit SmartScope")) do AUTO_LABELS[form] = true end
 
 -- deps:
 --   store            bscopes_store
@@ -83,7 +86,7 @@ function Source.spec(deps)
 
     return {
         api = 1,
-        label = function() return "SmartScope de BookOrbit" end,
+        label = function() return _("BookOrbit SmartScope") end,
         available = function() return deps.available() end,
         sort_default = { { key = "title", reverse = false } },
 
@@ -97,7 +100,7 @@ function Source.spec(deps)
                 if ok and #store:scopes() > 0 then
                     startPick(draft, done)
                 else
-                    deps.notify("No hay lista de SmartScopes guardada. Conecta el wifi una vez y vuelve a intentarlo.")
+                    deps.notify(_("No saved SmartScope list. Connect to Wi-Fi once and try again."))
                     done(false)
                 end
             end)
@@ -112,7 +115,7 @@ function Source.spec(deps)
                 return deps.cover(record.filepath)
             end
         end,
-        -- Sin open ni remote_prefix: son ficheros del Kindle y se abren como
+        -- Sin open ni remote_prefix: son ficheros del dispositivo y se abren como
         -- cualquier otro (el plugin oficial sigue preguntando qué posición usar).
     }
 end

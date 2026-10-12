@@ -8,6 +8,8 @@ local M = {}
 -- Id de la fuente en Bookshelf. Es lo que cada estantería guarda como
 -- source.kind: no cambiarlo nunca o las estanterías dejarían de encontrarla.
 M.SOURCE_ID = "bookorbit_scope"
+-- Fuente de "pila": una estantería con varias SmartScopes como carpetas.
+M.STACK_SOURCE_ID = "bookorbit_scope_stack"
 
 -- El catálogo de KOReader admite size <= 100 e ids <= 200 por petición.
 M.PAGE_SIZE = 100
@@ -64,7 +66,7 @@ function M.serverPct(progress_percentage)
     return clampPct(p / 100)
 end
 
--- Progreso que se pinta en la estantería: el mayor entre servidor y Kindle.
+-- Progreso que se pinta en la estantería: el mayor entre servidor y dispositivo.
 -- Estado: terminado si cualquiera de los dos lo da por terminado; leyendo si
 -- alguno está leyendo o hay progreso; si no, sin empezar.
 function M.mergeProgress(server_pct, server_status, local_pct, local_status)
@@ -162,15 +164,15 @@ function M.normalizeScopes(body)
     return out
 end
 
--- Qué libros del Kindle pertenecen a una SmartScope.
+-- Qué libros del dispositivo pertenecen a una SmartScope.
 --
 -- fetchPage(params) -> body, err  (body = respuesta de /catalog/books)
--- local_ids: lista de bookId del Kindle.
+-- local_ids: lista de bookId del dispositivo.
 --
--- Primero se pide la scope filtrada por los ids del Kindle, de 100 en 100.
+-- Primero se pide la scope filtrada por los ids del dispositivo, de 100 en 100.
 -- BookOrbit 3.3.0 ignora ids cuando va con smartScopeId (opds-book.service:
 -- buildCatalogScope sale antes de añadir la cláusula ids). Si la respuesta trae
--- algún libro que no está en el Kindle, o dice que hay más páginas, es que el
+-- algún libro que no está en el dispositivo, o dice que hay más páginas, es que el
 -- filtro no se ha aplicado: entonces se recorre la scope completa, una sola
 -- vez, y se cruza en local. Si el servidor algún día lo aplica, se usa la vía
 -- corta sin tocar nada.
@@ -257,7 +259,7 @@ end
 
 -- Registros para Bookshelf.
 --
--- member_ids: bookId de la scope que están en el Kindle (de la caché).
+-- member_ids: bookId de la scope que están en el dispositivo (de la caché).
 -- by_book_id: mapa bookId -> ruta del fichero (del plugin oficial).
 -- books: caché de libros por tostring(bookId) (normalizeBook).
 -- localProgress(path) -> pct, status (del sidecar) o nil.
@@ -297,6 +299,92 @@ function M.buildRecords(member_ids, by_book_id, books, localProgress, exists)
             }
         end
     end
+    return out
+end
+
+-- Clave de orden para títulos: minúsculas y sin tildes, para que "Ángel"
+-- vaya con la A y no al final.
+local FOLD = {
+    ["á"] = "a", ["à"] = "a", ["ä"] = "a", ["â"] = "a", ["Á"] = "a", ["À"] = "a", ["Ä"] = "a", ["Â"] = "a",
+    ["é"] = "e", ["è"] = "e", ["ë"] = "e", ["ê"] = "e", ["É"] = "e", ["È"] = "e", ["Ë"] = "e", ["Ê"] = "e",
+    ["í"] = "i", ["ì"] = "i", ["ï"] = "i", ["î"] = "i", ["Í"] = "i", ["Ì"] = "i", ["Ï"] = "i", ["Î"] = "i",
+    ["ó"] = "o", ["ò"] = "o", ["ö"] = "o", ["ô"] = "o", ["Ó"] = "o", ["Ò"] = "o", ["Ö"] = "o", ["Ô"] = "o",
+    ["ú"] = "u", ["ù"] = "u", ["ü"] = "u", ["û"] = "u", ["Ú"] = "u", ["Ù"] = "u", ["Ü"] = "u", ["Û"] = "u",
+    ["ñ"] = "n", ["Ñ"] = "n", ["ç"] = "c", ["Ç"] = "c", ["¿"] = "", ["¡"] = "",
+}
+function M.sortKey(s)
+    s = tostring(s or "")
+    s = s:gsub("[\195\194][\128-\191]", function(c) return FOLD[c] or c end)
+    return s:lower()
+end
+
+function M.sortByTitle(list, field)
+    field = field or "title"
+    table.sort(list, function(a, b)
+        local ka, kb = M.sortKey(a[field]), M.sortKey(b[field])
+        if ka ~= kb then return ka < kb end
+        return tostring(a[field]) < tostring(b[field])
+    end)
+    return list
+end
+
+-- SmartScopes que se muestran como carpetas en una estantería de pila.
+--
+-- scopes: lista {id, title} (de la caché).
+-- selected: nil = todas; o lista de ids elegidos.
+-- membership(id) -> { ids = {...} } o nil.
+-- by_book_id, exists: como en buildRecords.
+-- Con "todas" se ocultan las scopes sin libros en el dispositivo; las
+-- elegidas a mano se muestran siempre (aunque tengan 0).
+-- Devuelve { {scope_id, title, count, paths = {...}} } ordenado por título.
+function M.scopeFolders(scopes, selected, membership, by_book_id, exists)
+    by_book_id = type(by_book_id) == "table" and by_book_id or {}
+    local want
+    if type(selected) == "table" then
+        want = {}
+        for _, id in ipairs(selected) do want[tostring(id)] = true end
+    end
+    local out = {}
+    for _, s in ipairs(scopes or {}) do
+        local id = tostring(s.id)
+        if not want or want[id] then
+            local m = membership(id)
+            local paths = {}
+            for _, raw in ipairs(m and m.ids or {}) do
+                local n = tonumber(raw)
+                local path = n and (by_book_id[n] or by_book_id[tostring(n)])
+                if path and (not exists or exists(path)) then paths[#paths + 1] = path end
+            end
+            if want or #paths > 0 then
+                out[#out + 1] = { scope_id = id, title = s.title, count = #paths, paths = paths,
+                    synced = m ~= nil }
+            end
+        end
+    end
+    return M.sortByTitle(out)
+end
+
+-- Registro de carpeta para Bookshelf (modo fetch). El número de libros va en
+-- el título: el contador de carpetas de Bookshelf viene desactivado de serie.
+function M.folderRecord(entry, title_fmt, cover_path)
+    local title = (title_fmt or "%1 (%2)"):gsub("%%1", (entry.title:gsub("%%", "%%%%"))):gsub("%%2", tostring(entry.count))
+    return {
+        is_folder = true,
+        id = "scope-" .. entry.scope_id,
+        title = title,
+        label = title,
+        display_title = title,
+        cover_image_path = cover_path,
+        scope_id = entry.scope_id,
+        drill = { label = entry.title, scope_id = entry.scope_id },
+    }
+end
+
+function M.slice(list, offset, limit)
+    local out = {}
+    offset = offset or 0
+    local last = limit and math.min(offset + limit, #list) or #list
+    for i = offset + 1, last do out[#out + 1] = list[i] end
     return out
 end
 

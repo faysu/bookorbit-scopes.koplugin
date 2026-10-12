@@ -13,9 +13,10 @@ local Logic = require("bscopes_logic")
 local Sync = {}
 
 -- client: BookOrbitApi (catalogSection, catalogBooks).
--- opts.local_ids: bookId de los libros del Kindle.
+-- opts.local_ids: bookId de los libros del dispositivo.
 -- opts.scope_ids: scopes a comprobar (las que usan las estanterías).
 -- opts.with_scopes: pedir también la lista de SmartScopes.
+-- opts.all_scopes: comprobar todas las SmartScopes de la lista.
 function Sync.run(client, opts)
     opts = opts or {}
     local local_ids = opts.local_ids or {}
@@ -37,7 +38,7 @@ function Sync.run(client, opts)
         end
     end
 
-    -- Datos y progreso en el servidor de los libros del Kindle. Sin
+    -- Datos y progreso en el servidor de los libros del dispositivo. Sin
     -- smartScopeId el filtro ids sí se aplica.
     local books, books_ok = {}, true
     for _, chunk in ipairs(Logic.chunk(local_ids, Logic.PAGE_SIZE)) do
@@ -54,7 +55,20 @@ function Sync.run(client, opts)
     end
     if books_ok then payload.books = books end
 
-    for _, scope_id in ipairs(opts.scope_ids or {}) do
+    -- opts.all_scopes: además, todas las de la lista recién descargada (una
+    -- estantería de pila con "todas" en la primera sincronización).
+    local scope_ids, seen = {}, {}
+    for _, id in ipairs(opts.scope_ids or {}) do
+        id = tostring(id)
+        if not seen[id] then seen[id] = true; scope_ids[#scope_ids + 1] = id end
+    end
+    if opts.all_scopes then
+        for _, s in ipairs(payload.scopes or {}) do
+            if not seen[s.id] then seen[s.id] = true; scope_ids[#scope_ids + 1] = s.id end
+        end
+    end
+
+    for _, scope_id in ipairs(scope_ids) do
         local ids, info = Logic.collectScopeMembers(fetch, scope_id, local_ids, opts)
         if ids then
             payload.membership[#payload.membership + 1] = {

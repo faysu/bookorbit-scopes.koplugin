@@ -8,7 +8,7 @@ DEST="$VOL/koreader/plugins/bookorbit-scopes.koplugin"
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 [ -d "$VOL/koreader/plugins" ] || { echo "No encuentro $VOL/koreader/plugins"; exit 1; }
 mkdir -p "$DEST"
-for f in _meta.lua main.lua bscopes_*.lua README.md LICENSE; do
+for f in _meta.lua main.lua bscopes_*.lua README.md LICENSE CHANGELOG.md; do
     [ -f "$HERE/$f" ] && COPYFILE_DISABLE=1 cp -X "$HERE/$f" "$DEST/"
 done
 find "$DEST" "$VOL/koreader/plugins" -maxdepth 1 -name '._*' -type f -delete

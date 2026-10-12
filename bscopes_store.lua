@@ -1,8 +1,8 @@
 -- bscopes_store.lua -- caché offline (settings/bookorbit_scopes.lua).
 --
 -- Guarda lo último que se supo del servidor: la lista de SmartScopes, los datos
--- de cada libro del Kindle (título, autores, serie, progreso y estado en el
--- servidor) y qué libros del Kindle hay en cada scope usada por una estantería.
+-- de cada libro del dispositivo (título, autores, serie, progreso y estado en el
+-- servidor) y qué libros del dispositivo hay en cada scope usada por una estantería.
 -- Sin red, las estanterías se pintan solo con esto.
 --
 -- Las claves de libros y scopes son cadenas: LuaSettings no conserva bien las
@@ -48,9 +48,15 @@ end
 
 function Store:usedScopes()
     local used = self:_get("used_scopes", {})
-    local out = {}
+    local out, seen = {}, {}
     for id, v in pairs(used) do
-        if v then out[#out + 1] = id end
+        if v then out[#out + 1] = id; seen[id] = true end
+    end
+    -- Una estantería de pila con "todas" necesita todas las de la lista.
+    if self:usesAll() then
+        for _, s in ipairs(self:scopes()) do
+            if not seen[s.id] then out[#out + 1] = s.id; seen[s.id] = true end
+        end
     end
     table.sort(out, function(a, b)
         local na, nb = tonumber(a), tonumber(b)
@@ -68,6 +74,16 @@ function Store:markUsed(scope_id)
     if used[key] then return false end
     used[key] = true
     self.settings:saveSetting("used_scopes", used)
+    self.settings:flush()
+    return true
+end
+
+function Store:usesAll() return self:_get("used_all", false) == true end
+
+-- Devuelve true si es la primera vez (hay que sincronizar todas).
+function Store:markAllUsed()
+    if self:usesAll() then return false end
+    self.settings:saveSetting("used_all", true)
     self.settings:flush()
     return true
 end
@@ -98,7 +114,7 @@ function Store:apply(payload, now)
         for _, b in ipairs(payload.books) do
             if type(b) == "table" and b.id then books[tostring(b.id)] = b end
         end
-        -- Fuera los libros que ya no están en el Kindle.
+        -- Fuera los libros que ya no están en el dispositivo.
         if type(payload.local_ids) == "table" then
             local keep = {}
             for _, id in ipairs(payload.local_ids) do keep[tostring(id)] = true end

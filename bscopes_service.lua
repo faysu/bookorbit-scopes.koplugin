@@ -5,7 +5,7 @@
 -- compartir: la caché, la sincronización en curso y la última UI con
 -- Bookshelf, para avisarle cuando hay datos nuevos.
 --
--- El patrón de sincronización (cliente del plugin oficial, mapas del Kindle
+-- El patrón de sincronización (cliente del plugin oficial, mapas del dispositivo
 -- y subproceso) está adaptado de integrations/sui_bookorbit_want.lua de
 -- komadorirobin/simpleui.koplugin (licencia MIT).
 
@@ -128,6 +128,43 @@ function Service.cover(path)
     return nil
 end
 
+-- Portada de la tarjeta de una SmartScope en una estantería de pila: la del
+-- primer libro (de paths) que tenga portada en la caché de Cover browser,
+-- guardada como PNG en cache/bookorbit-scopes/. Solo se regenera si cambia el
+-- libro elegido o falta el archivo.
+local _folder_covers = {}
+
+function Service.coverDir()
+    local DataStorage = require("datastorage")
+    return DataStorage:getDataDir() .. "/cache/bookorbit-scopes"
+end
+
+function Service.folderCover(scope_id, paths)
+    local lfs = require("libs/libkoreader-lfs")
+    local file = Service.coverDir() .. "/scope-" .. tostring(scope_id):gsub("[^%w_-]", "_") .. ".png"
+    local hit = _folder_covers[scope_id]
+    if hit and lfs.attributes(file, "mode") == "file" then
+        for _, p in ipairs(paths or {}) do
+            if p == hit.book then return file end
+        end
+    end
+    for _, p in ipairs(paths or {}) do
+        local bb = Service.cover(p)
+        if bb then
+            lfs.mkdir(Service.coverDir():match("^(.*)/[^/]+$"))
+            lfs.mkdir(Service.coverDir())
+            local ok = pcall(bb.writePNG, bb, file)
+            pcall(bb.free, bb)
+            if ok and lfs.attributes(file, "mode") == "file" then
+                _folder_covers[scope_id] = { book = p }
+                return file
+            end
+            return nil
+        end
+    end
+    return nil
+end
+
 function Service.connected()
     local ok_n, NetworkMgr = pcall(require, "ui/network/manager")
     if not ok_n then return false end
@@ -139,6 +176,7 @@ function Service.notifyBookshelf()
     local ui = _ui
     if ui and ui.bookshelf and type(ui.bookshelf.sourceChanged) == "function" then
         pcall(ui.bookshelf.sourceChanged, ui.bookshelf, Logic.SOURCE_ID)
+        pcall(ui.bookshelf.sourceChanged, ui.bookshelf, Logic.STACK_SOURCE_ID)
     end
 end
 
@@ -163,6 +201,7 @@ local function runSync()
     local opts = {
         local_ids = Service.localIds(),
         scope_ids = store:usedScopes(),
+        all_scopes = store:usesAll(),
         with_scopes = true,
     }
     local completed, result = client:runInSubprocess(function()

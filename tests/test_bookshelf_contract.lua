@@ -66,3 +66,38 @@ T.test("si el plugin oficial no está, la fuente desaparece", function()
     T.eq(Sources.isAvailable(Logic.SOURCE_ID), false)
     T.eq(Sources.list(Logic.SOURCE_ID, { scope_id = "6" }), nil)
 end)
+
+T.test("Bookshelf acepta la fuente de pila (modo fetch, con carpetas)", function()
+    local Stack = require("bscopes_stack")
+    local store = Store.new(F.memorySettings())
+    store:apply({
+        scopes = Logic.normalizeScopes(F.scopes_body),
+        books = { Logic.normalizeBook(F.items[703]) },
+        local_ids = F.local_ids,
+        membership = { { scope_id = "6", ids = { 703, 725 } } },
+    }, 1)
+    store:markAllUsed()
+    local spec = Stack.spec{
+        store = store, available = function() return true end,
+        localMaps = function() return { byBookId = F.by_book_id } end,
+        exists = function() return true end, requestSync = function() end,
+        chooseScopeSet = function() end, ensureScopes = function() end, notify = function() end,
+    }
+    local ok, why = Sources.register(Logic.STACK_SOURCE_ID, spec)
+    T.eq(ok, true, why)
+    T.eq(Sources.isPaged(Logic.STACK_SOURCE_ID), true)
+    local src = { kind = Logic.STACK_SOURCE_ID, mode = "all" }
+    local items, total = Sources.fetch(Logic.STACK_SOURCE_ID, src, nil, 0, 8)
+    T.eq(total, 1)
+    T.eq(items[1].is_folder, true)
+    T.eq(items[1].source_nav, true, "Bookshelf la trata como carpeta navegable")
+    T.eq(items[1].title, "Fantasía (2)")
+    local drill = Sources.drillFor(items[1])
+    T.eq(drill.scope_id, "6")
+    local books, n = Sources.fetch(Logic.STACK_SOURCE_ID, src, drill, 0, 8)
+    T.eq(n, 2)
+    T.eq(books[1].source_kind, Logic.STACK_SOURCE_ID)
+    T.eq(Sources.isRemotePath(books[1].filepath), false)
+    local rows = Sources.editorRows(Logic.STACK_SOURCE_ID, { source = src })
+    T.eq(#rows, 1, "botón propio en el editor en lugar de 'Orden del servidor'")
+end)

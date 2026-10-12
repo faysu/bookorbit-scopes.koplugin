@@ -51,7 +51,10 @@ function T.test(name, fn)
     end
 end
 
-local suites = { "test_logic", "test_store", "test_sync", "test_source", "test_bookshelf_contract", "test_service" }
+-- Idioma fijo para que los tests no dependan del LANG del equipo.
+require("bscopes_i18n").setLanguage("es")
+
+local suites = { "test_logic", "test_store", "test_sync", "test_source", "test_stack", "test_bookshelf_contract", "test_service", "test_i18n" }
 local only = arg and arg[1]
 for _, name in ipairs(suites) do
     if not only or only == name then

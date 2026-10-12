@@ -5,7 +5,7 @@ set -e
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d)
 mkdir -p "$TMP/bookorbit-scopes.koplugin" "$HERE/dist"
-for f in _meta.lua main.lua bscopes_*.lua README.md LICENSE; do
+for f in _meta.lua main.lua bscopes_*.lua README.md LICENSE CHANGELOG.md; do
     [ -f "$HERE/$f" ] && COPYFILE_DISABLE=1 cp -X "$HERE/$f" "$TMP/bookorbit-scopes.koplugin/"
 done
 rm -f "$HERE/dist/bookorbit-scopes.koplugin.zip"

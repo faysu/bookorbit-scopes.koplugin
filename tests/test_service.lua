@@ -24,7 +24,8 @@ local function stubs(opts)
         show = function(_, w) env.shown[#env.shown + 1] = w end,
         close = function() end,
     }
-    P["datastorage"] = { getSettingsDir = function() return "/tmp/settings" end }
+    P["datastorage"] = { getSettingsDir = function() return "/tmp/settings" end,
+        getDataDir = function() return "/tmp/koreader" end }
     P["luasettings"] = { open = function(_, path)
         env.settings_path = path
         return env.settings
@@ -34,7 +35,8 @@ local function stubs(opts)
         runWhenOnline = function(_, cb) if env.connected then cb() end end,
     }
     P["ui/trapper"] = { wrap = function(_, fn) return fn() end }
-    P["libs/libkoreader-lfs"] = { attributes = function(path, what)
+    env.pngs = {}
+    P["libs/libkoreader-lfs"] = { mkdir = function() return true end, attributes = function(path, what)
         if what == "modification" then return env.sidecars[path] and env.sidecars[path].mtime end
         if what == "mode" then return "file" end
     end }
@@ -67,6 +69,12 @@ local function stubs(opts)
     }
     P["pluginloader"] = { getPluginInstance = function(_, name) if name == "bookorbit" then return env.plugin end end }
     P["bookinfomanager"] = { getBookInfo = function(_, path, cover)
+        if env.cover_tables and cover then
+            local bb = { path = path }
+            function bb:writePNG(file) env.pngs[#env.pngs + 1] = { file = file, from = self.path } end
+            function bb:free() self.freed = true end
+            return { cover_bb = bb, cover_w = 300, cover_h = 450 }
+        end
         return { cover_bb = cover and ("bb:" .. path) or nil, cover_w = 300, cover_h = 450 }
     end }
     P["ui/widget/infomessage"] = { new = function(_, o) return o end }
@@ -75,7 +83,14 @@ local function stubs(opts)
         function cls:new(o) o = setmetatable(o or {}, cls); if o.init then o:init() end; return o end
         return cls
     end }
-    P["ui/widget/menu"] = { new = function(_, o) env.menu = o; return o end }
+    env.menus = {}
+    P["ui/widget/menu"] = { new = function(_, o)
+        env.menu = o
+        env.menus[#env.menus + 1] = o
+        o.updates = 0
+        function o:updateItems() self.updates = self.updates + 1 end
+        return o
+    end }
     P["ui/widget/inputdialog"] = { new = function(_, o)
         env.dialog = o
         o.text = o.input
@@ -85,7 +100,7 @@ local function stubs(opts)
     end }
     P["device"] = { screen = { getWidth = function() return 600 end, getHeight = function() return 800 end } }
     -- Módulos del plugin, cargados de nuevo para empezar con estado limpio.
-    for _, m in ipairs({ "bscopes_service", "bscopes_source", "bscopes_store", "bscopes_sync", "main" }) do
+    for _, m in ipairs({ "bscopes_service", "bscopes_source", "bscopes_stack", "bscopes_store", "bscopes_sync", "main" }) do
         P[m] = nil
     end
 end
@@ -221,7 +236,7 @@ T.test("menú Estado describe las estanterías", function()
     ui.bookshelf.specs["bookorbit_scope"].list({ scope_id = "6" })
     local text = plugin:statusText()
     T.ok(text:find("Fantasía: 3 libros"), text)
-    T.ok(text:find("Libros del Kindle emparejados: 6"), text)
+    T.ok(text:find("Libros emparejados en este dispositivo: 6"), text)
 end)
 
 T.test("portada desde Cover browser", function()
@@ -319,4 +334,109 @@ T.test("arranque real (orden de FileManager): la fuente existe antes del primer 
     T.eq(#first, 3)
     T.eq(#ticks, 1, "solo queda el reintento de respaldo, que no hace nada")
     ticks[1]()
+end)
+
+
+T.test("main registra también la fuente de pila", function()
+    stubs()
+    local ui = { bookshelf = fakeBookshelf(), menu = { registerToMainMenu = function() end } }
+    newPlugin(ui)
+    T.ok(ui.bookshelf.specs["bookorbit_scope_stack"], "fuente de pila registrada")
+    T.ok(ui.bookshelf.specs["bookorbit_scope_stack"].fetch)
+end)
+
+T.test("selector: 'Todas las SmartScopes' y nombre", function()
+    stubs()
+    local ui = { bookshelf = fakeBookshelf(), menu = { registerToMainMenu = function() end } }
+    newPlugin(ui)
+    local spec = ui.bookshelf.specs["bookorbit_scope_stack"]
+    local draft = { label = "Nueva estantería", source = { kind = "bookorbit_scope_stack" } }
+    local accepted
+    spec.pick(draft, function(v) accepted = (v ~= false) end)   -- descarga la lista (hay red)
+    local first = env.menus[#env.menus]
+    T.eq(first.title, "SmartScopes de esta estantería")
+    T.eq(first.item_table[1].text, "Todas las SmartScopes")
+    first:onMenuSelect(first.item_table[1])
+    T.eq(env.dialog.input, "SmartScopes de BookOrbit")
+    env.dialog.buttons[1][2].callback()
+    T.eq(accepted, true)
+    T.eq(draft.source.mode, "all")
+end)
+
+T.test("selector: marcar a mano con casillas, sin cerrarse al tocar", function()
+    stubs()
+    local ui = { bookshelf = fakeBookshelf(), menu = { registerToMainMenu = function() end } }
+    newPlugin(ui)
+    local spec = ui.bookshelf.specs["bookorbit_scope_stack"]
+    local draft = { source = { kind = "bookorbit_scope_stack" } }
+    local accepted
+    spec.pick(draft, function(v) accepted = (v ~= false) end)
+    local first = env.menus[#env.menus]
+    first:onMenuSelect(first.item_table[2])                     -- Elegir SmartScopes…
+    local list = env.menus[#env.menus]
+    T.eq(list.title, "Elige las SmartScopes")
+    T.eq(list.item_table[1].text, "✓ Aceptar (0 elegidas)")
+    list:onMenuSelect(list.item_table[1])                       -- sin marcar nada
+    T.ok(env.shown[#env.shown].text:find("al menos una"), "pide elegir alguna")
+    list:onMenuSelect(list.item_table[3])                       -- Fantasía
+    list:onMenuSelect(list.item_table[5])                       -- Leyendo o queriendo leer
+    T.eq(list.item_table[3].text, "Fantasía  ✓")
+    T.eq(list.item_table[1].text, "✓ Aceptar (2 elegidas)")
+    T.ok(list.updates >= 2, "repinta la lista al marcar")
+    list:onMenuSelect(list.item_table[5])                       -- desmarcar
+    list:onMenuSelect(list.item_table[5])                       -- volver a marcar
+    list:onMenuSelect(list.item_table[1])                       -- Aceptar
+    env.dialog.buttons[1][1].callback()                         -- Cancelar el nombre
+    T.eq(accepted, true)
+    T.eq(draft.source.mode, "selected")
+    T.same(draft.source.scope_ids, { "6", "22" })
+end)
+
+T.test("selector: la X guarda lo marcado (como las casillas de KOReader)", function()
+    stubs()
+    local ui = { bookshelf = fakeBookshelf(), menu = { registerToMainMenu = function() end } }
+    newPlugin(ui)
+    local spec = ui.bookshelf.specs["bookorbit_scope_stack"]
+    local draft = { source = {} }
+    local accepted
+    spec.pick(draft, function(v) accepted = (v ~= false) end)
+    local first = env.menus[#env.menus]
+    first:onMenuSelect(first.item_table[2])
+    local list = env.menus[#env.menus]
+    list:onMenuSelect(list.item_table[3])                       -- Fantasía
+    list.close_callback()                                       -- X
+    env.dialog.buttons[1][1].callback()                         -- nombre: Cancelar (propuesto)
+    T.eq(accepted, true)
+    T.same(draft.source.scope_ids, { "6" })
+end)
+
+T.test("selector: X sin marcar nada vuelve atrás; X en el primero cancela", function()
+    stubs()
+    local ui = { bookshelf = fakeBookshelf(), menu = { registerToMainMenu = function() end } }
+    newPlugin(ui)
+    local spec = ui.bookshelf.specs["bookorbit_scope_stack"]
+    local result = "pendiente"
+    spec.pick({ source = {} }, function(v) result = v end)
+    local first = env.menus[#env.menus]
+    first:onMenuSelect(first.item_table[2])
+    local list = env.menus[#env.menus]
+    list.close_callback()                                       -- X en la lista: vuelve al primero
+    T.eq(result, "pendiente")
+    first.close_callback()                                      -- X en el primero: cancela
+    T.eq(result, false)
+end)
+
+T.test("portada de la tarjeta: PNG del primer libro con portada, una sola vez", function()
+    stubs()
+    env.cover_tables = true
+    local Service = require("bscopes_service")
+    local paths = { "/mnt/us/a.epub", "/mnt/us/b.epub" }
+    local f1 = Service.folderCover("6", paths)
+    T.eq(f1, "/tmp/koreader/cache/bookorbit-scopes/scope-6.png")
+    T.eq(#env.pngs, 1)
+    T.eq(env.pngs[1].from, "/mnt/us/a.epub")
+    Service.folderCover("6", paths)
+    T.eq(#env.pngs, 1, "no se regenera si no cambia el libro")
+    Service.folderCover("6", { "/mnt/us/b.epub" })
+    T.eq(#env.pngs, 2, "se regenera si el libro ya no está en la scope")
 end)
