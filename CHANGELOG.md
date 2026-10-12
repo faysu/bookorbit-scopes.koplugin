@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 — 2026-10-12
+
+- **Fix: SmartScope shelf empty after starting KOReader.** If Bookshelf reopened a SmartScope shelf at startup, it showed no books until you visited another shelf (and, in Spines view, waited 30 seconds). This plugin loads before Bookshelf, and Bookshelf builds its screen on the first `Show` event, before the plugin had registered its source; in Spines view Bookshelf then kept the empty list cached for 30 seconds. The source is now registered in the UI's post-init callback, after every plugin has started and before anything is shown, so the first paint already has the books (offline too). `onShow`, a `sourceChanged` nudge and retries after 1 and 3 seconds remain as fallbacks.
+
 ## 0.1.1 — 2026-10-12
 
 - **Shelf name when picking a SmartScope.** After choosing the scope you are asked for the shelf name, prefilled with the scope title, so long titles can be shortened. Cancel keeps the scope title.

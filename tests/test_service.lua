@@ -230,3 +230,93 @@ T.test("portada desde Cover browser", function()
     local bb, w, h = Service.cover("/mnt/us/a.epub")
     T.eq(bb, "bb:/mnt/us/a.epub"); T.eq(w, 300); T.eq(h, 450)
 end)
+
+T.test("al registrarse avisa a Bookshelf para repintar la estantería abierta", function()
+    stubs()
+    local ui = { bookshelf = fakeBookshelf(), menu = { registerToMainMenu = function() end } }
+    newPlugin(ui)
+    T.eq(env.changed[1], "bookorbit_scope")
+end)
+
+T.test("arranque real: estantería abierta antes del registro se repinta con libros", function()
+    local dir = os.getenv("BOOKSHELF_DIR")
+    if not dir then return end
+    stubs()
+    -- Primera sesión: sincroniza y deja la caché en disco (env.settings).
+    local ui1 = { bookshelf = fakeBookshelf(), menu = { registerToMainMenu = function() end } }
+    newPlugin(ui1)
+    ui1.bookshelf.specs["bookorbit_scope"].list({ scope_id = "6" })
+    local saved = env.settings
+    -- Reinicio de KOReader: sin red, misma caché, registro REAL de Bookshelf.
+    stubs({ connected = false })
+    env.settings = saved
+    local Sources = dofile(dir .. "/lib/bookshelf_sources.lua")
+    local shelf = { kind = "bookorbit_scope", scope_id = "6" }
+    local shown = Sources.list("bookorbit_scope", shelf)   -- Bookshelf pinta antes del registro
+    T.eq(shown, nil, "sin fuente registrada la estantería sale vacía")
+    Sources.onChanged("widget", function(id)              -- lo que hace BookshelfWidget:init
+        if id == "bookorbit_scope" then shown = Sources.list("bookorbit_scope", shelf) end
+    end)
+    local bs = { SOURCE_API = Sources.API }
+    function bs:registerSource(id, spec) return Sources.register(id, spec) end
+    function bs:sourceChanged(id) Sources.changed(id) end
+    local ui2 = { menu = { registerToMainMenu = function() end } }
+    local ticks = {}
+    package.loaded["ui/uimanager"].nextTick = function(_, fn) ticks[#ticks + 1] = fn end
+    newPlugin(ui2)
+    ui2.bookshelf = bs                                     -- Bookshelf termina de cargar
+    for _, fn in ipairs(ticks) do fn() end
+    T.ok(shown, "Bookshelf ha vuelto a pedir los libros")
+    T.eq(#shown, 3, "y ahora salen los de la caché, sin red")
+end)
+
+T.test("Bookshelf que tarda en cargar: reintenta a los 1 y 3 segundos", function()
+    stubs()
+    local delays = {}
+    local pending = {}
+    local U = package.loaded["ui/uimanager"]
+    U.nextTick = function(_, fn) pending[#pending + 1] = fn end
+    U.scheduleIn = function(_, d, fn) delays[#delays + 1] = d; pending[#pending + 1] = fn end
+    local ui = { menu = { registerToMainMenu = function() end } }
+    newPlugin(ui)
+    table.remove(pending, 1)()          -- nextTick: aún no hay Bookshelf
+    table.remove(pending, 1)()          -- +1 s: tampoco
+    ui.bookshelf = fakeBookshelf()
+    table.remove(pending, 1)()          -- +3 s: ya está
+    T.same(delays, { 1, 3 })
+    T.ok(ui.bookshelf.specs["bookorbit_scope"])
+end)
+
+T.test("arranque real (orden de FileManager): la fuente existe antes del primer Show", function()
+    local dir = os.getenv("BOOKSHELF_DIR")
+    if not dir then return end
+    stubs()
+    local ui1 = { bookshelf = fakeBookshelf(), menu = { registerToMainMenu = function() end } }
+    newPlugin(ui1)
+    ui1.bookshelf.specs["bookorbit_scope"].list({ scope_id = "6" })   -- caché en disco
+    local saved = env.settings
+    stubs({ connected = false })
+    env.settings = saved
+    local ticks = {}
+    package.loaded["ui/uimanager"].nextTick = function(_, fn) ticks[#ticks + 1] = fn end
+    package.loaded["ui/uimanager"].scheduleIn = function(_, _, fn) ticks[#ticks + 1] = fn end
+    local Sources = dofile(dir .. "/lib/bookshelf_sources.lua")
+    -- FileManager:init: plugins en orden alfabético (este antes que Bookshelf),
+    -- luego los postInitCallback, luego UIManager:show -> evento Show.
+    local post = {}
+    local ui = { menu = { registerToMainMenu = function() end } }
+    function ui:registerPostInitCallback(cb) post[#post + 1] = cb end
+    local plugin = newPlugin(ui)
+    local bs = { SOURCE_API = Sources.API }
+    function bs:registerSource(id, spec) return Sources.register(id, spec) end
+    function bs:sourceChanged(id) Sources.changed(id) end
+    ui.bookshelf = bs                                  -- Bookshelf:init
+    for _, cb in ipairs(post) do cb() end              -- postInitCallback
+    T.eq(plugin:onShow(), nil, "onShow no corta el evento")
+    -- Bookshelf:onShow crea la pantalla y pide la estantería (sin ticks).
+    local first = Sources.list("bookorbit_scope", { kind = "bookorbit_scope", scope_id = "6" })
+    T.ok(first, "la fuente ya está registrada en la primera pintura")
+    T.eq(#first, 3)
+    T.eq(#ticks, 1, "solo queda el reintento de respaldo, que no hace nada")
+    ticks[1]()
+end)

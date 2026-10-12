@@ -143,19 +143,51 @@ local function register(ui)
         return false
     end
     Service.setUI(ui)
+    -- Al arrancar, Bookshelf puede haber abierto ya la última estantería
+    -- (vacía, porque la fuente aún no existía): que la vuelva a pintar.
+    Service.notifyBookshelf()
     return true
 end
 
+-- Reintentos si Bookshelf tarda en cargar.
+local RETRY_DELAYS = { 1, 3 }
+
+-- Este plugin se inicia antes que Bookshelf (orden alfabético de carpetas), y
+-- Bookshelf crea su pantalla en el evento Show, antes de cualquier nextTick.
+-- En la vista de lomos guarda la lista de cada estantería 30 s y sourceChanged
+-- no la renueva, así que registrarse tarde deja la estantería vacía ese rato.
+-- Por eso el registro va en el postInitCallback de la UI (cuando ya están
+-- todos los plugins y aún no se ha mostrado nada); onShow y los reintentos
+-- quedan de respaldo.
 function BookOrbitScopes:init()
     if self.ui and self.ui.menu then self.ui.menu:registerToMainMenu(self) end
-    -- Los plugins cargan por orden de nombre: Bookshelf puede no estar aún.
-    if not register(self.ui) then
-        UIManager:nextTick(function()
-            if not register(self.ui) then
-                logger.info("bookorbit-scopes: Bookshelf no disponible; la fuente no se registra")
-            end
-        end)
+    if self:_register() then return end
+    if self.ui and type(self.ui.registerPostInitCallback) == "function" then
+        pcall(self.ui.registerPostInitCallback, self.ui, function() self:_register() end)
     end
+    local attempt = 0
+    local function retry()
+        if self:_register() then return end
+        attempt = attempt + 1
+        if RETRY_DELAYS[attempt] then
+            UIManager:scheduleIn(RETRY_DELAYS[attempt], retry)
+        else
+            logger.info("bookorbit-scopes: Bookshelf no disponible; la fuente no se registra")
+        end
+    end
+    UIManager:nextTick(retry)
+end
+
+function BookOrbitScopes:_register()
+    if self._registered then return true end
+    self._registered = register(self.ui)
+    return self._registered
+end
+
+-- Llega antes que el onShow de Bookshelf (mismo orden que init). No devuelve
+-- true para no cortar el evento.
+function BookOrbitScopes:onShow()
+    self:_register()
 end
 
 function BookOrbitScopes:onNetworkConnected()
