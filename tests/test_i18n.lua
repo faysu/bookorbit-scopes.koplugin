@@ -60,3 +60,28 @@ T.test("en inglés la fuente y el menú salen en inglés", function()
     I18n.setLanguage("es")
     package.loaded["bscopes_source"] = nil
 end)
+
+T.test("_meta.lua se lee aunque el módulo de idiomas no esté a mano (App Store)", function()
+    local saved_path, saved_mod = package.path, package.loaded["bscopes_i18n"]
+    package.path = "/nonexistent/?.lua"
+    package.loaded["bscopes_i18n"] = nil
+    local ok, meta = pcall(dofile, "_meta.lua")
+    package.path, package.loaded["bscopes_i18n"] = saved_path, saved_mod
+    T.ok(ok, tostring(meta))
+    T.eq(type(meta), "table")
+    T.eq(meta.fullname, "BookOrbit shelves", "sin el módulo, en inglés")
+    T.ok(meta.version:match("^%d+%.%d+%.%d+$"))
+end)
+
+T.test("_meta.lua en KOReader en español", function()
+    I18n.setLanguage("es")
+    local meta = dofile("_meta.lua")
+    T.eq(meta.fullname, "Estanterías BookOrbit")
+end)
+
+T.test("App Store saca la versión del _meta.lua y no confunde fullname con name", function()
+    local src = io.open("_meta.lua"):read("*a")
+    -- Mismas expresiones que appstore.koplugin (detectPluginFromArchive).
+    T.eq(src:match('name%s*=%s*["\']([^"\']+)["\']'), nil)
+    T.eq(src:match('version%s*=%s*["\']([^"\']+)["\']'), dofile("_meta.lua").version)
+end)

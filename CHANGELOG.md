@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 — 2026-10-12
+
+- **`_meta.lua` can be read on its own.** Plugin catalogs such as [App Store](https://github.com/omer-faruq/appstore.koplugin) load a plugin's `_meta.lua` outside KOReader's plugin loader. It used to require the plugin's language module and could fail there (for example with the plugin disabled); it now falls back to English texts instead. No change in normal use.
+- The repository now carries the `koreader-plugin` topic, so the plugin shows up in App Store.
+
 ## 0.2.0 — 2026-10-12
 
 - **New: SmartScope stack shelves.** A second shelf source, **BookOrbit SmartScopes (stack)**, shows your SmartScopes as folders, like Bookshelf's Genres shelf. Each folder is titled with the SmartScope's name and how many of its books are on the device (e.g. "Fantasy (5)"), and uses one of those books' covers. Open a folder to see its books, sorted by title, with the same progress as a single-SmartScope shelf.
